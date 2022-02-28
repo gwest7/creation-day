@@ -1,0 +1,268 @@
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>G West</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@100&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      background-color: rgb(19, 18, 17);
+      font-family: 'Roboto', sans-serif;
+    }
+    canvas { position: absolute; top: 0; width: 100%; height: 100%; z-index: 1; }
+    .main {
+      color: black;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -35%);
+      width: 50%;
+      height: 50%;
+      z-index: 2;
+      transition: color 4s;
+    }
+    .night {
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/rxjs/7.5.4/rxjs.umd.min.js" integrity="sha512-80hbLLcKzDU4IhlzXi59aGvN1CbJg0re7whWO6nUOTqTYspVrPtXnIX8SYk4fWeebe8wnunJWYhNMPX0M9tYag==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <div class="main" id="main">
+    <h3>Hello world</h3>
+  </div>
+  <script>
+    const DAY = 120000; // time duration of a virtual day in milliseconds
+    const BIRD_CIRCLE_X = 50000;
+    const BIRD_CIRCLE_Y = 30000;
+    const BIRD_FLAP_CIRCLE = 1000;
+    let canvas, context;
+    let printNext = false;
+    const running$ = new rxjs.BehaviorSubject(false);
+    const frame$ = running$.pipe(
+      // rxjs.tap(console.log),
+      rxjs.switchMap(running => running ? new rxjs.Observable(subscriber => {
+        let frame;
+        const f = n => {
+          subscriber.next(n);
+          frame = window.requestAnimationFrame(f);
+        }
+        frame = window.requestAnimationFrame(f);
+        return () => window.cancelAnimationFrame(frame);
+      }) : rxjs.EMPTY),
+      rxjs.map(frame => Date.now()),
+    );
+    let elmMain;
+    let isNightSet = false;
+
+    const sunDayAngleRGB = padDayAngleArray([
+      { _: Math.PI * 0.4, r:247, g:191, b:0 }, // dawn
+      { _: Math.PI * 0.5, r:254, g:255, b:199 }, // rise
+      { _: Math.PI * 0.6, r:255, g:255, b:255 }, // midday
+      { _: Math.PI * 1.3, r:255, g:255, b:255 }, // midday
+      { _: Math.PI * 1.4, r:254, g:255, b:199 }, // set
+      { _: Math.PI * 1.5, r:247, g:191, b:0 }, // dusk
+    ]);
+    const earthDayAngleRGB = padDayAngleArray([
+      { _: Math.PI * 0.35, r:24,   g:91, b:77 },  // dawn
+      { _: Math.PI * 0.45, r:104, g:150, b:0 },  // sunrise
+      { _: Math.PI * 0.55, r:132, g:197, b:0 }, // gold end
+      { _: Math.PI * 1,    r:149, g:193, b:23 }, // midday
+      { _: Math.PI * 1.35, r:132, g:197, b:0 }, // gold start
+      { _: Math.PI * 1.45, r:104, g:150, b:0 },  // sun set
+      { _: Math.PI * 1.65, r:24,   g:91, b:77 },  // dusk
+    ]);
+    const moonDayAngleRGB = padDayAngleArray([
+      { _: Math.PI * 0.4, r:255, g:255, b:255 }, // evening
+      { _: Math.PI * 0.45, r:237, g:199, b:100 }, // moon set
+      { _: Math.PI * 1.0, r:230, g:205, b:110 }, // day
+      { _: Math.PI * 1.55, r:237, g:199, b:100 }, // moon rise
+      { _: Math.PI * 1.7, r:255, g:255, b:255 }, // morning
+    ]);
+    const glowDayAngleRGB = padDayAngleArray([
+      { _: Math.PI * 0.3,  inner: {r:0,   g:27,  b:177}, outer: {r:0,   g:20,  b:44} },  // nadir
+      { _: Math.PI * 0.35, inner: {r:91,  g:0,   b:117}, outer: {r:0,   g:44,  b:88} },  // dawn
+      { _: Math.PI * 0.45, inner: {r:250, g:179, b:21},  outer: {r:49,  g:0,   b:239} }, // sunrise
+      { _: Math.PI * 0.55, inner: {r:214, g:255, b:248}, outer: {r:138, g:198, b:255} }, // gold end
+      { _: Math.PI * 1,    inner: {r:255, g:255, b:255}, outer: {r:138, g:198, b:255} }, // midday
+      { _: Math.PI * 1.35, inner: {r:255, g:234, b:215}, outer: {r:138, g:198, b:255} }, // gold start
+      { _: Math.PI * 1.50, inner: {r:255, g:180, b:76},  outer: {r:208, g:34,  b:10} },  // sun set
+      { _: Math.PI * 1.65, inner: {r:0,   g:27,  b:177}, outer: {r:0,   g:1,   b:35} },  // dusk
+    ]);
+    let stars = [];
+    for (let i=0; i<20; i++) stars.push(({x:Math.random(), y:Math.pow(Math.random(),2)}));
+    const starBrightness = padDayAngleArray([
+      { _: Math.PI * 0.25, a: 1 },
+      { _: Math.PI * 0.4, a: 0 },
+      { _: Math.PI * 1.5, a: 0 },
+      { _: Math.PI * 1.7, a: 1 },
+    ]);
+    let birds = [];
+    for (let i=0; i<10; i++) birds.push(({ x:Math.random(), y:Math.random(), z:Math.random(), offset:Math.random()*Math.PI*2 }));
+    const birdVis = padDayAngleArray([
+      { _: Math.PI * 0.4, a: 0 },
+      { _: Math.PI * 0.6, a: 1 },
+      { _: Math.PI * 1.35, a: 1 },
+      { _: Math.PI * 1.5, a: 0 },
+    ]);
+
+    function padDayAngleArray(dayTimes) {
+      const ts = [...dayTimes]; // shallow copy
+      ts.sort((a,b) => a._ - b._);
+      const first = ts[0];
+      const last = ts[ts.length-1];
+      const dayLater = first._ + Math.PI * 2;
+      const dayEarlier = last._ - Math.PI * 2;
+      ts.push({ ...first, _: dayLater });
+      ts.unshift({ ...last, _: dayEarlier });
+      // if (printNext) console.log('array',ts)
+      return ts;
+    }
+
+    function interceptDayAngle(dayTimes, current) {
+      const idxLater = dayTimes.findIndex(t => t._ >= current);
+      const later = dayTimes[idxLater];
+      if (later._ === current) return {from:later,fraction:0};
+      const earlier = dayTimes[idxLater-1];
+      const limit = later._ - earlier._;
+      const measure = current - earlier._;
+      const fraction = measure / limit;
+      // if (printNext) console.log('intercept', earlier.value, later.value)
+      return { from:earlier, to:later, fraction };
+    }
+
+    function createCanvas(w,h){
+      if (canvas) document.body.removeChild(canvas);
+      canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      context = canvas.getContext("2d");
+      document.body.appendChild(canvas);
+
+    }
+
+    function init() {
+      elmMain = document.getElementById('main');
+      elmMain.className = 'main night';
+      createCanvas(innerWidth,innerHeight);
+      rxjs.fromEvent(window, 'resize').pipe(
+        rxjs.debounceTime(1000),
+      ).subscribe(e => {
+        createCanvas(e.target.innerWidth,e.target.innerHeight);
+      });
+      running$.next(true);
+    }
+    
+    document.addEventListener("DOMContentLoaded", () => init());
+
+    window.onclick = (e) => {
+      printNext = true;
+    }
+
+    frame$.subscribe(t => {
+      let dayTime = (t % DAY) / DAY; // day time (zero at midnight)
+      let _ = dayTime * Math.PI * 2;
+      let centerX = canvas.width * 0.5;
+      let orbitY = canvas.height * 0.8;
+      let birdsY = canvas.height * 0.6;
+      let earthCenterY = canvas.height * 2;
+      if (_ > Math.PI * 1.5) {
+        if (!~elmMain.className.indexOf('night')) elmMain.className = 'main night';
+      } else if (_ > Math.PI * 0.5) {
+        if (~elmMain.className.indexOf('night')) elmMain.className = 'main';
+      }
+
+      let sunX = Math.sin(_) * canvas.width * 0.45;
+      let sunY = Math.cos(_) * canvas.height;
+      let moonX = Math.sin(_ + Math.PI) * canvas.width * 0.45;
+      let moonY = Math.cos(_ + Math.PI) * canvas.height;
+      let sunRadius = canvas.width * 0.045;
+      let from, to, fraction; // interceptions
+      let r,g,b,a;
+
+      // background (with sun glow)
+      ({ from, to, fraction } = interceptDayAngle(glowDayAngleRGB, _));
+      let grd = context.createRadialGradient(centerX + sunX, orbitY + sunY, sunRadius, centerX, orbitY, canvas.height*2);
+      r = fraction === 0 ? from.outer.r : Math.abs(((to.outer.r - from.outer.r) * fraction) + from.outer.r);
+      g = fraction === 0 ? from.outer.g : Math.abs(((to.outer.g - from.outer.g) * fraction) + from.outer.g);
+      b = fraction === 0 ? from.outer.b : Math.abs(((to.outer.b - from.outer.b) * fraction) + from.outer.b);
+      grd.addColorStop(0.7, `rgb(${r},${g},${b})`);
+      r = fraction === 0 ? from.inner.r : Math.abs(((to.inner.r - from.inner.r) * fraction) + from.inner.r);
+      g = fraction === 0 ? from.inner.g : Math.abs(((to.inner.g - from.inner.g) * fraction) + from.inner.g);
+      b = fraction === 0 ? from.inner.b : Math.abs(((to.inner.b - from.inner.b) * fraction) + from.inner.b);
+      grd.addColorStop(0, `rgb(${r},${g},${b})`);
+      context.fillStyle = grd;
+      context.fillRect(0,0,canvas.width,canvas.height);
+
+      // SUN
+      ({ from, to, fraction } = interceptDayAngle(sunDayAngleRGB, _));
+      r = fraction === 0 ? from.r : Math.abs(((to.r - from.r) * fraction) + from.r);
+      g = fraction === 0 ? from.g : Math.abs(((to.g - from.g) * fraction) + from.g);
+      b = fraction === 0 ? from.b : Math.abs(((to.b - from.b) * fraction) + from.b);
+      context.beginPath();
+      context.fillStyle = `rgb(${r},${g},${b})`;
+      context.arc(centerX + sunX, orbitY + sunY, sunRadius, 0, Math.PI*2, false);
+      context.fill();
+
+      // MOON
+      ({ from, to, fraction } = interceptDayAngle(moonDayAngleRGB, _));
+      r = fraction === 0 ? from.r : Math.abs(((to.r - from.r) * fraction) + from.r);
+      g = fraction === 0 ? from.g : Math.abs(((to.g - from.g) * fraction) + from.g);
+      b = fraction === 0 ? from.b : Math.abs(((to.b - from.b) * fraction) + from.b);
+      context.beginPath();
+      context.fillStyle = `rgb(${r},${g},${b})`;
+      context.arc(centerX + moonX, orbitY + moonY, sunRadius * 0.8, 0, Math.PI*2, false);
+      context.fill();
+
+      // LANDSCAPE
+      ({ from, to, fraction } = interceptDayAngle(earthDayAngleRGB, _));
+      r = fraction === 0 ? from.r : Math.abs(((to.r - from.r) * fraction) + from.r);
+      g = fraction === 0 ? from.g : Math.abs(((to.g - from.g) * fraction) + from.g);
+      b = fraction === 0 ? from.b : Math.abs(((to.b - from.b) * fraction) + from.b);
+      context.beginPath();
+      context.fillStyle = `rgb(${r},${g},${b})`;
+      context.ellipse(centerX, earthCenterY, canvas.width * 1.2, canvas.height * 1.2, 0, 0, Math.PI*2);
+      context.fill();
+      context.closePath();
+
+      // STARS
+      ({ from, to, fraction } = interceptDayAngle(starBrightness, _));
+      a = fraction === 0 ? from.a : Math.abs(((to.a - from.a) * fraction) + from.a);
+      if (a>0) {
+        context.fillStyle = `rgba(255,255,255,${a})`;
+        stars.forEach(s => {
+          context.fillRect(canvas.width * s.x, canvas.height * s.y * 0.6,2,2);
+        });
+      }
+
+      // BIRDS
+      ({ from, to, fraction } = interceptDayAngle(birdVis, _));
+      a = fraction === 0 ? from.a : Math.abs(((to.a - from.a) * fraction) + from.a);
+      if (a>0) {
+        let _birdX = (t % BIRD_CIRCLE_X) / BIRD_CIRCLE_X * Math.PI * 2;
+        let _birdY = (t % BIRD_CIRCLE_Y) / BIRD_CIRCLE_Y * Math.PI * 2;
+        let _birdFlap = (t % BIRD_FLAP_CIRCLE) / BIRD_FLAP_CIRCLE * Math.PI * 2;
+        let flockX = canvas.width * 0.4;
+        let flockY = canvas.height * 0.1;
+        // let flockZ = Math.cos(_birdX);
+        context.beginPath();
+        context.strokeStyle = `rgba(90,90,90,${a})`;
+        birds.forEach(b => {
+          const x = Math.sin(_birdX + b.x) * flockX + centerX;
+          const y = Math.sin(_birdY + b.y) * flockY + birdsY;
+          const oy = Math.cos(_birdFlap + b.offset) * 6;
+          context.moveTo(x - 10, y+oy);
+          context.bezierCurveTo(x, y, x, y, x+10, y+oy);
+        });
+        context.stroke();
+      }
+
+      printNext = false;
+    }, console.warn);
+    
+  </script>
+
+</body>
+</html>
