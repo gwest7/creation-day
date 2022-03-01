@@ -40,7 +40,8 @@
     const BIRD_FLAP_CIRCLE = 1000;
     let canvas, context;
     let centerX, orbitY, birdsY, earthCenterY2;
-    let radius, radiusMin, radiusMax;
+    let radius, radiusMin, radiusMax, sunRadius;
+    let flockX, flockY;
     let printNext = false;
     const running$ = new rxjs.BehaviorSubject(false);
     const frame$ = running$.pipe(
@@ -56,10 +57,10 @@
       }) : rxjs.EMPTY),
       rxjs.map(frame => Date.now()),
     );
-    const period$ = new rxjs.BehaviorSubject('Hello');
+    const period$ = new rxjs.Subject();
     const greet$ = period$.pipe(
       rxjs.distinctUntilChanged(),
-      rxjs.debounceTime(3000),
+      rxjs.skip(1),
       rxjs.map(p => `${p} world`),
       rxjs.switchMap(p => rxjs.interval(50).pipe(
         rxjs.take(p.length + 1),
@@ -103,7 +104,7 @@
       { _: Math.PI * 1.50, inner: {r:255, g:180, b:76},  outer: {r:208, g:34,  b:10} },  // sun set
       { _: Math.PI * 1.65, inner: {r:0,   g:27,  b:177}, outer: {r:0,   g:1,   b:35} },  // dusk
     ]);
-    let stars = [];
+    const stars = [];
     for (let i=0; i<100; i++) stars.push(({ a: Math.random(), r: Math.pow(Math.random(),5) }));
     const starBrightness = padDayAngleArray([
       { _: Math.PI * 0.25, a: 1 },
@@ -111,7 +112,7 @@
       { _: Math.PI * 1.5, a: 0 },
       { _: Math.PI * 1.7, a: 1 },
     ]);
-    let birds = [];
+    const birds = [];
     for (let i=0; i<10; i++) birds.push(({ x:Math.random(), y:Math.random(), z:Math.random(), offset:Math.random()*Math.PI*2 }));
     const birdVis = padDayAngleArray([
       { _: Math.PI * 0.4, a: 0 },
@@ -148,8 +149,8 @@
       canvas = document.createElement('canvas');
       canvas.width = w;
       canvas.height = h;
-      context = canvas.getContext("2d");
       document.body.appendChild(canvas);
+      context = canvas.getContext("2d");
 
       centerX = canvas.width * 0.5;
       orbitY = canvas.height * 0.8;
@@ -158,6 +159,9 @@
       radiusMax = Math.sqrt( centerX * centerX + orbitY * orbitY );
       radiusMin = radiusMax * 0.3;
       radius = radiusMax - radiusMin;
+      sunRadius = canvas.width * 0.045;
+      flockX = canvas.width * 0.4;
+      flockY = canvas.height * 0.1;
     }
 
     function init() {
@@ -177,11 +181,13 @@
     frame$.subscribe(t => {
       let dayTime = (t % DAY) / DAY; // day time (zero at midnight and less than 1 before midnight)
       let _ = dayTime * Math.PI * 2;
+
       if (Math.PI * 0.5 < _ && _ < Math.PI * 1.5) {
         if (~elmMain.className.indexOf('night')) elmMain.className = 'main';
       } else {
         if (!~elmMain.className.indexOf('night')) elmMain.className = 'main night';
       }
+      
       if (Math.PI * 0.3 < _ && _ <= Math.PI * 0.95) {
         period$.next('Good morning');
       } else if (Math.PI * 0.95 < _ && _ <= Math.PI * 1.45) {
@@ -192,17 +198,16 @@
         period$.next('Good night');
       }
 
-      let sunX = Math.sin(_) * canvas.width * 0.45;
-      let sunY = Math.cos(_) * canvas.height;
-      let moonX = Math.sin(_ + Math.PI) * canvas.width * 0.45;
-      let moonY = Math.cos(_ + Math.PI) * canvas.height;
-      let sunRadius = canvas.width * 0.045;
+      const sunX = Math.sin(_) * canvas.width * 0.45;
+      const sunY = Math.cos(_) * canvas.height;
+      const moonX = Math.sin(_ + Math.PI) * canvas.width * 0.45;
+      const moonY = Math.cos(_ + Math.PI) * canvas.height;
       let from, to, fraction; // interceptions
       let r,g,b,a;
 
       // background (with sun glow)
       ({ from, to, fraction } = interceptDayAngle(glowDayAngleRGB, _));
-      let grd = context.createRadialGradient(centerX + sunX, orbitY + sunY, sunRadius, centerX, orbitY, canvas.height*2);
+      const grd = context.createRadialGradient(centerX + sunX, orbitY + sunY, sunRadius, centerX, orbitY, canvas.height*2);
       r = fraction === 0 ? from.outer.r : Math.abs(((to.outer.r - from.outer.r) * fraction) + from.outer.r);
       g = fraction === 0 ? from.outer.g : Math.abs(((to.outer.g - from.outer.g) * fraction) + from.outer.g);
       b = fraction === 0 ? from.outer.b : Math.abs(((to.outer.b - from.outer.b) * fraction) + from.outer.b);
@@ -265,11 +270,9 @@
       ({ from, to, fraction } = interceptDayAngle(birdVis, _));
       a = fraction === 0 ? from.a : Math.abs(((to.a - from.a) * fraction) + from.a);
       if (a>0) {
-        let _birdX = (t % BIRD_CIRCLE_X) / BIRD_CIRCLE_X * Math.PI * 2;
-        let _birdY = (t % BIRD_CIRCLE_Y) / BIRD_CIRCLE_Y * Math.PI * 2;
-        let _birdFlap = (t % BIRD_FLAP_CIRCLE) / BIRD_FLAP_CIRCLE * Math.PI * 2;
-        let flockX = canvas.width * 0.4;
-        let flockY = canvas.height * 0.1;
+        const _birdX = (t % BIRD_CIRCLE_X) / BIRD_CIRCLE_X * Math.PI * 2;
+        const _birdY = (t % BIRD_CIRCLE_Y) / BIRD_CIRCLE_Y * Math.PI * 2;
+        const _birdFlap = (t % BIRD_FLAP_CIRCLE) / BIRD_FLAP_CIRCLE * Math.PI * 2;
         // let flockZ = Math.cos(_birdX);
         context.beginPath();
         context.strokeStyle = `rgba(90,90,90,${a})`;
