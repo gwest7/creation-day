@@ -9,7 +9,7 @@ An attempt to recreate the basic elements of sunset/sunrise landscape photos usi
 ### Features
 * A canvas day is 60 seconds and all animations are time based (using `Date.now()`).
 * The page is responsive in that a second after a viewport dimension change a new canvas (with a 1:1 pixel ratio) will be drawn too.
-* Birds' wing movement are simply bezier curves which moving start and end control points.
+* Birds' wing movements are simply bezier curves with moving start and end control points.
 * All other animation is simply Cos and Sin coordinates based on the angle of the day. (A day == Pi * 2)
 * All colour adjustments are simply two colours mixed to a ratio calculated using the day-angle. Eg. at 0 be red and at Pi be blue so at half-Pi it will be dark purple.
 
